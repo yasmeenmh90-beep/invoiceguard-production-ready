@@ -1,6 +1,22 @@
 import io
 
 
+class UnreadableUploadError(Exception):
+    """The uploaded file cannot be read as the PDF/image its name says it is
+    (corrupt, empty, password-protected). The caller's problem: HTTP 4xx."""
+
+
+class OcrUnavailableError(Exception):
+    """The file needs OCR but the OCR tools are not installed on this host.
+    The server's problem: HTTP 503, never a silent empty extraction."""
+
+
+_OCR_UNAVAILABLE = (
+    "OCR is required to read this file, but the OCR tools (Tesseract and "
+    "Poppler) are not available on the server."
+)
+
+
 def extract_text_from_upload(filename: str, content: bytes) -> str:
     """Return raw text from an uploaded invoice file (PDF, image, or plain
     text). Real invoices are often scans with no text layer at all, so PDFs
@@ -28,27 +44,62 @@ def _extract_pdf_text_layer(content: bytes) -> str:
     import pdfplumber
 
     text_parts = []
-    with pdfplumber.open(io.BytesIO(content)) as pdf:
-        for page in pdf.pages:
-            text_parts.append(page.extract_text() or "")
+    try:
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for page in pdf.pages:
+                text_parts.append(page.extract_text() or "")
+    except Exception as exc:
+        raise UnreadableUploadError(
+            "The uploaded file could not be read as a PDF. It may be corrupt, "
+            "empty or password-protected."
+        ) from exc
     return "\n".join(text_parts)
 
 
 def _ocr_pdf_bytes(content: bytes) -> str:
-    from pdf2image import convert_from_bytes
+    try:
+        from pdf2image import convert_from_bytes
+        from pdf2image.exceptions import PDFInfoNotInstalledError
+    except ImportError as exc:
+        raise OcrUnavailableError(_OCR_UNAVAILABLE) from exc
 
-    images = convert_from_bytes(content)
+    try:
+        images = convert_from_bytes(content)
+    except PDFInfoNotInstalledError as exc:
+        raise OcrUnavailableError(_OCR_UNAVAILABLE) from exc
+    except Exception as exc:
+        raise UnreadableUploadError(
+            "The uploaded PDF has no text layer and could not be converted to "
+            "images for OCR. It may be corrupt."
+        ) from exc
     return "\n".join(_ocr_image(img) for img in images)
 
 
 def _ocr_image_bytes(content: bytes) -> str:
-    from PIL import Image
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise OcrUnavailableError(_OCR_UNAVAILABLE) from exc
 
-    img = Image.open(io.BytesIO(content))
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.load()
+    except Exception as exc:
+        raise UnreadableUploadError(
+            "The uploaded file could not be read as an image. It may be corrupt or empty."
+        ) from exc
     return _ocr_image(img)
 
 
 def _ocr_image(img) -> str:
-    import pytesseract
+    try:
+        import pytesseract
+    except ImportError as exc:
+        raise OcrUnavailableError(_OCR_UNAVAILABLE) from exc
 
-    return pytesseract.image_to_string(img)
+    try:
+        return pytesseract.image_to_string(img)
+    except pytesseract.TesseractNotFoundError as exc:
+        raise OcrUnavailableError(_OCR_UNAVAILABLE) from exc
+    except pytesseract.TesseractError as exc:
+        raise UnreadableUploadError("OCR could not read the uploaded file.") from exc

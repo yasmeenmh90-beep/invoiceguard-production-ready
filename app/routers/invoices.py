@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Invoice
 from app.schemas import InvoiceOut, InvoiceSummary, DecisionRequest
-from app.services.pdf_parser import extract_text_from_upload
+from app.services.pdf_parser import (
+    extract_text_from_upload,
+    OcrUnavailableError,
+    UnreadableUploadError,
+)
 from app.agents.orchestrate_agent import OrchestrateAgent
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -20,7 +24,14 @@ async def upload_invoice(
     resulting invoice always lands at status=pending_review.
     """
     content = await file.read()
-    raw_text = extract_text_from_upload(file.filename, content)
+    try:
+        raw_text = extract_text_from_upload(file.filename or "", content)
+    except UnreadableUploadError as exc:
+        raise HTTPException(422, str(exc))
+    except OcrUnavailableError as exc:
+        raise HTTPException(503, str(exc))
+    if not raw_text.strip():
+        raise HTTPException(422, "No readable text was found in the uploaded file.")
 
     invoice = Invoice(invoice_number="PENDING-EXTRACTION", raw_text=raw_text)
     db.add(invoice)
@@ -37,6 +48,9 @@ def submit_invoice_text(raw_text: str = Form(...), db: Session = Depends(get_db)
     """Same pipeline as /upload but takes raw text directly — handy for
     testing with the synthetic dataset without generating PDFs.
     """
+    if not raw_text.strip():
+        raise HTTPException(422, "Invoice text is empty.")
+
     invoice = Invoice(invoice_number="PENDING-EXTRACTION", raw_text=raw_text)
     db.add(invoice)
     db.commit()

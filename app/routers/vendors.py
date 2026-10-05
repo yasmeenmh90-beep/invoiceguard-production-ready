@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -10,7 +11,7 @@ router = APIRouter(tags=["vendors & purchase orders"])
 
 @router.post("/vendors", response_model=VendorOut)
 def create_vendor(payload: VendorCreate, db: Session = Depends(get_db)):
-    existing = db.query(Vendor).filter(Vendor.name.ilike(payload.name)).first()
+    existing = db.query(Vendor).filter(func.lower(Vendor.name) == func.lower(payload.name)).first()
     if existing:
         raise HTTPException(400, "Vendor already exists")
     vendor = Vendor(name=payload.name, approved=payload.approved)
@@ -27,14 +28,20 @@ def list_vendors(db: Session = Depends(get_db)):
 
 @router.post("/purchase-orders", response_model=PurchaseOrderOut)
 def create_po(payload: PurchaseOrderCreate, db: Session = Depends(get_db)):
-    vendor = db.query(Vendor).filter(Vendor.name.ilike(payload.vendor_name)).first()
+    vendor = db.query(Vendor).filter(func.lower(Vendor.name) == func.lower(payload.vendor_name)).first()
     if not vendor:
         vendor = Vendor(name=payload.vendor_name, approved=True)
         db.add(vendor)
         db.commit()
         db.refresh(vendor)
 
-    existing_po = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == payload.po_number).first()
+    # Case-insensitive, like the PO lookup in RetrieveAgent: two PO numbers that
+    # differ only by letter case would make an invoice's citation ambiguous.
+    existing_po = (
+        db.query(PurchaseOrder)
+        .filter(func.lower(PurchaseOrder.po_number) == func.lower(payload.po_number))
+        .first()
+    )
     if existing_po:
         raise HTTPException(400, "PO number already exists")
 

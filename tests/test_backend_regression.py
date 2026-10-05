@@ -95,17 +95,23 @@ class TestBackendRegression(unittest.TestCase):
         self.assertEqual(stats["rejected"], 0)
 
     def test_invoice_submit_and_decision_lifecycle(self):
-        # First ensure vendor & PO exist for matching
-        self.client.post("/vendors", json={"name": "Apex Logistics", "approved": True})
-        self.client.post(
+        # First ensure vendor & PO exist for matching. Both fixture calls are asserted:
+        # if either one fails, the rest of the test would exercise a different scenario
+        # (an invoice with no purchase order) than the one it is meant to cover.
+        vendor_res = self.client.post("/vendors", json={"name": "Apex Logistics", "approved": True})
+        self.assertEqual(vendor_res.status_code, 200, vendor_res.text)
+        po_res = self.client.post(
             "/purchase-orders",
             json={
                 "po_number": "PO-9921",
                 "vendor_name": "Apex Logistics",
                 "amount": 1250.0,
-                "line_items": [{"description": "Standard freight shipping", "quantity": 1, "unit_price": 1250.0, "total": 1250.0}]
+                "line_items": [{"description": "Standard freight shipping", "qty": 1, "unit_price": 1250.0}]
             }
         )
+        self.assertEqual(po_res.status_code, 200, po_res.text)
+        self.assertEqual(po_res.json()["po_number"], "PO-9921")
+        self.assertEqual(po_res.json()["vendor_id"], vendor_res.json()["id"])
 
         sample_raw_invoice = """
 INVOICE
@@ -130,6 +136,16 @@ Payment Terms: Net 30
         inv = submit_res.json()
         self.assertEqual(inv["status"], "pending_review")
         invoice_id = inv["id"]
+
+        # The invoice must be the clean, PO-matched one this lifecycle is about:
+        # matched to PO-9921 by its cited number, validation passed, low risk.
+        self.assertEqual(inv["retrieval_context"]["matched_po_number"], "PO-9921")
+        self.assertEqual(inv["retrieval_context"]["po_match_method"], "po_number")
+        self.assertFalse(inv["retrieval_context"]["po_vendor_mismatch"])
+        self.assertTrue(inv["validation_result"]["passed"], inv["validation_result"]["issues"])
+        self.assertEqual(inv["assessment_result"]["risk_score"], 0)
+        self.assertEqual(inv["risk_level"], "low")
+        self.assertIsNone(inv["decided_by"])
 
         # Fetch detail
         detail_res = self.client.get(f"/invoices/{invoice_id}")

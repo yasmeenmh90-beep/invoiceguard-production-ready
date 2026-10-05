@@ -1,7 +1,7 @@
 import datetime as dt
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class VendorCreate(BaseModel):
@@ -91,8 +91,24 @@ class InvoiceSummary(BaseModel):
 
 
 class DecisionRequest(BaseModel):
-    decided_by: str = "staff_user"
+    """A human reviewer's approve/reject decision.
+
+    `decided_by` is required and must not be blank. It is SELF-REPORTED: the
+    API has no authentication, so this is whatever name the client sends (the
+    frontend pre-fills it from the selected demo persona). The audit trail
+    records who claimed the decision, not a verified identity.
+    """
+
+    decided_by: str
     note: Optional[str] = None
+
+    @field_validator("decided_by")
+    @classmethod
+    def decided_by_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("decided_by must not be blank")
+        return value
 
 
 class DashboardStats(BaseModel):

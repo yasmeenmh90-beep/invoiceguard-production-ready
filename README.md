@@ -42,7 +42,7 @@ The system provides:
    - Agent actions are logged
    - Validation issues are retained
    - Risk flags are explainable
-   - Human decisions record operator identity and notes
+   - Human decisions record the reviewer's self-reported identity and notes
 
 3. **Hard Human Approval Gate**
    - AI analysis cannot automatically approve an invoice
@@ -583,7 +583,7 @@ npm run build
 From the project root:
 
 ```bash
-python -m unittest tests/test_backend_regression.py
+python -m unittest discover -s tests -v
 ```
 
 The backend regression suite covers core functionality including vendor registration, purchase orders, dashboard statistics, invoice processing and human decision-state enforcement.
@@ -682,6 +682,8 @@ Text-layer PDFs and direct text submissions do not require OCR.
 ### Authentication
 
 The current demo personas simulate operator identity for hackathon demonstration. Production deployment would require genuine authentication and authorization.
+
+Reviewer identity is self-reported. The backend API has no authentication: `decided_by` on `/invoices/{id}/approve` and `/invoices/{id}/reject` is required and must not be blank, but it is whatever name the client sends (the frontend pre-fills it from the selected demo persona). The audit trail therefore records who claimed a decision, not a verified identity.
 
 ---
 

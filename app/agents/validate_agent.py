@@ -38,7 +38,13 @@ class ValidateAgent(BaseAgent):
         checks["po_found"] = po_id is not None
         checks["po_match_method"] = context.get("po_match_method")
         if po_id is None:
-            issues.append("No matching purchase order found for this vendor.")
+            cited_po = context.get("cited_po_number")
+            if cited_po:
+                issues.append(
+                    f"Invoice cites PO {cited_po}, but no purchase order with that number exists."
+                )
+            else:
+                issues.append("No matching purchase order found for this vendor.")
         elif context.get("po_vendor_mismatch"):
             issues.append(
                 f"Invoice cites PO {context.get('matched_po_number')}, but that PO "

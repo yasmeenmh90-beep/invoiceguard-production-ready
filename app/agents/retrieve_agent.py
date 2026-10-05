@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.agents.base import BaseAgent
@@ -20,9 +21,11 @@ class RetrieveAgent(BaseAgent):
         invoice_number = extracted.get("invoice_number")
         po_number = (extracted.get("po_number") or "").strip() or None
 
+        # Exact, case-insensitive match. (Not ilike/LIKE: that would treat "%"
+        # and "_" in an invoice's vendor name as wildcards.)
         vendor = (
             db.query(Vendor)
-            .filter(Vendor.name.ilike(vendor_name))
+            .filter(func.lower(Vendor.name) == func.lower(vendor_name))
             .first()
             if vendor_name
             else None
@@ -38,22 +41,26 @@ class RetrieveAgent(BaseAgent):
         if po_number:
             matching_po = (
                 db.query(PurchaseOrder)
-                .filter(PurchaseOrder.po_number.ilike(po_number))
+                .filter(func.lower(PurchaseOrder.po_number) == func.lower(po_number))
                 .first()
             )
             if matching_po:
                 po_match_method = "po_number"
-                if vendor and matching_po.vendor_id != vendor.id:
+                if vendor is None or matching_po.vendor_id != vendor.id:
+                    # Either the PO belongs to a different known vendor, or
+                    # the invoice's vendor name is not on file at all (typo,
+                    # unlisted payee). The vendor is deliberately NOT taken
+                    # from the PO: the stated payee is not the PO's vendor,
+                    # so the invoice stays unresolved and is flagged for the
+                    # human reviewer.
                     po_vendor_mismatch = True
-                elif vendor is None:
-                    # Invoice didn't resolve a vendor by name (typo, unlisted
-                    # vendor, etc.) but the PO tells us who it should be.
-                    vendor = db.query(Vendor).filter(Vendor.id == matching_po.vendor_id).first()
 
-        if matching_po is None and vendor:
+        if po_number is None and vendor:
             # Same vendor, still-open PO closest in amount to the invoice
             # total. Weaker signal than a stated PO number, used only when
-            # the invoice doesn't reference one directly.
+            # the invoice doesn't reference one directly. If a PO number WAS
+            # cited but doesn't exist, there is no fallback: Validate reports
+            # the unknown PO number instead.
             candidate_pos = (
                 db.query(PurchaseOrder)
                 .filter(PurchaseOrder.vendor_id == vendor.id, PurchaseOrder.status == "open")
@@ -72,7 +79,7 @@ class RetrieveAgent(BaseAgent):
                 db.query(Invoice)
                 .filter(
                     Invoice.vendor_id == vendor.id,
-                    Invoice.invoice_number == invoice_number,
+                    func.lower(Invoice.invoice_number) == func.lower(invoice_number),
                     Invoice.id != invoice_id,
                 )
                 .all()
@@ -86,6 +93,7 @@ class RetrieveAgent(BaseAgent):
             "vendor_approved": vendor.approved if vendor else False,
             "vendor_avg_amount": vendor.avg_invoice_amount if vendor else None,
             "vendor_invoice_count": vendor.invoice_count if vendor else 0,
+            "cited_po_number": po_number,
             "matched_po_id": matching_po.id if matching_po else None,
             "matched_po_number": matching_po.po_number if matching_po else None,
             "matched_po_amount": matching_po.amount if matching_po else None,

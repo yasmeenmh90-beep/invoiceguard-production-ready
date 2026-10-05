@@ -1,0 +1,170 @@
+{
+  "recorded_at_commit": "563b796",
+  "note": "Fingerprint of the implementation the scenarios in run_scenarios.py were last reconciled with.",
+  "implementation": {
+    "risk_score_increments": [
+      {
+        "when": "context.get('duplicate_invoice_ids')",
+        "add": "50"
+      },
+      {
+        "when": "avg_amount > 0 AND multiplier >= settings.ANOMALY_MULTIPLIER",
+        "add": "30"
+      },
+      {
+        "when": "not context.get('vendor_found')",
+        "add": "15"
+      },
+      {
+        "when": "context.get('po_vendor_mismatch')",
+        "add": "50"
+      },
+      {
+        "when": "not (context.get('po_vendor_mismatch')) AND not validation.get('passed')",
+        "add": "20 * len(validation.get('issues', []))"
+      }
+    ],
+    "risk_level_rules": [
+      {
+        "when": "score >= 50",
+        "level": "high"
+      },
+      {
+        "when": "not (score >= 50) AND score >= 20",
+        "level": "medium"
+      },
+      {
+        "when": "not (score >= 50) AND not (score >= 20)",
+        "level": "low"
+      }
+    ],
+    "amount_tolerance_pct": 0.02,
+    "anomaly_multiplier_default": "2.5",
+    "status_assignments": [
+      {
+        "file": "app/agents/orchestrate_agent.py",
+        "where": "OrchestrateAgent.run_pipeline",
+        "target": "invoice.status",
+        "value": "'pending_review'"
+      },
+      {
+        "file": "app/agents/orchestrate_agent.py",
+        "where": "OrchestrateAgent.apply_decision",
+        "target": "invoice.status",
+        "value": "decision"
+      }
+    ],
+    "invoice_status_default": "pending_review",
+    "routes": [
+      "GET /",
+      "GET /dashboard/alerts",
+      "GET /dashboard/stats",
+      "GET /invoices",
+      "GET /invoices/{invoice_id}",
+      "GET /purchase-orders",
+      "GET /vendors",
+      "POST /invoices/submit-text",
+      "POST /invoices/upload",
+      "POST /invoices/{invoice_id}/approve",
+      "POST /invoices/{invoice_id}/reject",
+      "POST /purchase-orders",
+      "POST /vendors"
+    ],
+    "seed_vendors": [
+      {
+        "name": "Acme Office Supplies",
+        "approved": true,
+        "avg_invoice_amount": 1200.0,
+        "invoice_count": 8
+      },
+      {
+        "name": "Brightline Logistics",
+        "approved": true,
+        "avg_invoice_amount": 4500.0,
+        "invoice_count": 5
+      },
+      {
+        "name": "Meridian Cloud Services",
+        "approved": true,
+        "avg_invoice_amount": 2000.0,
+        "invoice_count": 6
+      },
+      {
+        "name": "Shadow Consulting LLC",
+        "approved": false,
+        "avg_invoice_amount": 0.0,
+        "invoice_count": 0
+      },
+      {
+        "name": "Sterling Print & Signage",
+        "approved": true,
+        "avg_invoice_amount": 800.0,
+        "invoice_count": 3
+      }
+    ],
+    "seed_purchase_orders": [
+      {
+        "po_number": "PO-1001",
+        "vendor": "Acme Office Supplies",
+        "amount": 1250.0,
+        "status": "open",
+        "line_items": [
+          "Office chairs",
+          "Standing desks"
+        ]
+      },
+      {
+        "po_number": "PO-1002",
+        "vendor": "Brightline Logistics",
+        "amount": 4500.0,
+        "status": "open",
+        "line_items": [
+          "Freight shipping Q3"
+        ]
+      },
+      {
+        "po_number": "PO-1003",
+        "vendor": "Meridian Cloud Services",
+        "amount": 2000.0,
+        "status": "open",
+        "line_items": [
+          "Cloud hosting monthly"
+        ]
+      },
+      {
+        "po_number": "PO-1004",
+        "vendor": "Sterling Print & Signage",
+        "amount": 800.0,
+        "status": "open",
+        "line_items": [
+          "Trade show banners"
+        ]
+      }
+    ],
+    "supplier_kb_vendors": [
+      "acme office supplies",
+      "brightline logistics",
+      "meridian cloud services",
+      "shadow consulting llc",
+      "sterling print & signage"
+    ],
+    "invoice_response_fields": [
+      "amount",
+      "assessment_result",
+      "audit_logs",
+      "created_at",
+      "decided_at",
+      "decided_by",
+      "due_date",
+      "extracted_data",
+      "id",
+      "invoice_number",
+      "po_id",
+      "retrieval_context",
+      "risk_level",
+      "status",
+      "validation_result",
+      "vendor_id"
+    ]
+  }
+}
